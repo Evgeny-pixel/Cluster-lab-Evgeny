@@ -37,13 +37,13 @@ EN
         Next, you need to configure the network on all servers. The IP addresses will be as follows: bastion-server - 172.16.0.1/24, app-server - 172.16.0.2/24, mon-server - 172.16.0.3/24, log-server - 172.16.0.4/24. Start each virtual machine. Since the network is managed by default on Ubuntu via Netplan, we will use it, but you can also configure it via NetworkManager. Run the "ip a" command on each server and look at the name of the third interface. It's usually enp0s8, which is our activated adapter 2 with the virtual network. You need to assign it an IP address and activate the interface. To do this, run the following commands on each server: "sudo nano /etc/netplan/99-lab-inet.yaml".
     Then, add the following to the files on each server:
     
-network:
-  version: 2
-  ethernets:
-    enp0s8:
-      dhcp4: false
-      addresses:
-        - 172.16.0.X/24
+        network:
+          version: 2
+          ethernets:
+            enp0s8:
+              dhcp4: false
+              addresses:
+                - 172.16.0.X/24
 
     !!!!!INSTEAD OF X, WRITE A NUMBER IN ACCORDANCE WITH THE SERVER NAME, AND ALSO KEEP STRICT INDINCES AS IN THE EXAMPLE!!!!!
 
