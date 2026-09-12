@@ -1,0 +1,57 @@
+# Congigure base alerts
+groups:
+  - name: cluster_alerts
+    rules:
+      - alert: HostDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host or service {{ $labels.instance }} unavailable."
+          description: "Scrap target {{ $labels.job }} ({{ $labels.instance }}) has not responded for more than 1 minute."
+
+      - alert: HighCPULoad
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High cpu load on {{ $labels.instance }}."
+          description: "CPU usage has been above 85% for the last 2 minutes."
+
+      - alert: LowDiskSpace
+        expr: (node_filesystem_free_bytes{mountpoint="/"}/node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}."
+          description: "Free space on the root partition is less than 10%."
+
+      - alert: MysqlDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database MySQL unavailable."
+          description: "mysqld_exporter lost connection to MySQL on {{ $labels.instance }}."
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 90% (current value: {{ $value }}."
+
+      - alert: NGINX Down
+        expr: nginx_up == 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Nginx is down on {{ $labels.instance }}"
+          description: "No nginx metrics"

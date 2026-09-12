@@ -1,0 +1,187 @@
+# STAGE 1: Base settings - setup hostname, add hosts in /etc/hosts, update cache, install basic packages, set timezone, configure ufw, protection ssh, configure disks(RAID1, LUKS, LVM)
+---
+- name: Basic configure
+  hosts: cluster
+  become: yes
+  tasks:
+    - name: Add hosts to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^172\.16\.0\.\d+\s+{{ item.name }}$'
+        line: "{{ item.ip }} {{ item.name }}"
+        state: present
+      loop:
+        - { ip: '172.16.0.1', name: 'bastion-server' }
+        - { ip: '172.16.0.2', name: 'app-server' }
+        - { ip: '172.16.0.3', name: 'mon-server' }
+        - { ip: '172.16.0.4', name: 'log-server' }
+
+    - name: Configure hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Update cache and install apt
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+          - git
+          - htop
+          - net-tools
+          - ufw
+          - tree
+          - python3-pip
+          - acl
+          - rsync
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Set timezone
+      community.general.timezone:
+        name: Europe/Moscow
+
+    - name: Blocking input traffic
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Allow output traffic
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+
+    - name: Allow traffic from 172.16.0.0/24
+      community.general.ufw:
+        policy: allow
+        from_ip: '172.16.0.0/24'
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+    - name: Disable password authentication for ssh
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+        regexp: '^\s*(#\s*)?PasswordAuthentication\s+(yes|no)'
+        line: "PasswordAuthentication no"
+        state: present
+      notify: Restart ssh
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+        enabled: true
+
+
+- name: Configure app-server
+  hosts: app_servers
+  become: yes
+  tasks:
+    - name: Install apt for disks manage
+      ansible.builtin.apt:
+        name:
+          - mdadm
+          - cryptsetup
+          - lvm2
+          - smartmontools
+        state: present
+
+    - name: Create RAID1 array /dev/md0
+      ansible.builtin.command:
+        cmd: mdadm --create --verbose /dev/md0 --level=1 --raid-devices=2 /dev/sdb /dev/sdc --run
+        creates: /dev/md0
+
+    - name: Save mdadm configuration
+      ansible.builtin.shell: |
+        mdadm --detail --scan > /etc/mdadm/mdadm.conf
+        update-initramfs -u
+
+    - name: Create key for LUKS
+      ansible.builtin.command:
+        cmd: dd if=/dev/urandom of=/etc/luks.key bs=512 count=1
+        creates: /etc/luks.key
+
+    - name: Access of /etc/luks.key
+      ansible.builtin.file:
+        path: /etc/luks.key
+        mode: '0400'
+        owner: 'root'
+
+    - name: Encryption /dev/md0
+      community.crypto.luks_device:
+        device: /dev/md0
+        state: present
+        keyfile: /etc/luks.key
+
+    - name: Open encryption device in crypt_raid
+      community.crypto.luks_device:
+        device: /dev/md0
+        state: opened
+        name: crypt_raid
+        keyfile: /etc/luks.key
+
+    - name: Add crypt_raid in crypttab
+      community.general.crypttab:
+        name: crypt_raid
+        backing_device: /dev/md0
+        password: /etc/luks.key
+        state: present
+      no_log: true
+
+    - name: Configure LVM, create volume group vg_data
+      community.general.lvg:
+        vg: vg_data
+        pvs: /dev/mapper/crypt_raid
+        pvresize: true
+
+    - name: Create logical volume lv_app
+      community.general.lvol:
+        vg: vg_data
+        lv: lv_app
+        size: 10g
+
+    - name: Create logical volume lv_log
+      community.general.lvol:
+        vg: vg_data
+        lv: lv_log
+        size: 10g
+
+    - name: Create logical volume lv_db
+      community.general.lvol:
+        vg: vg_data
+        lv: lv_db
+        size: 9g
+
+    - name: Create filesystem in logical volumes
+      ansible.builtin.filesystem:
+        fstype: ext4
+        dev: "{{ item }}"
+      loop:
+        - /dev/vg_data/lv_app
+        - /dev/vg_data/lv_db
+        - /dev/vg_data/lv_log
+
+    - name: Making work directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /srv/app
+        - /var/lib/mysql
+        - /var/log/app_logs
+
+    - name: Mounting volumes
+      ansible.builtin.mount:
+        path: "{{ item.dir }}"
+        src: "{{ item.device }}"
+        fstype: ext4
+        opts: defaults,acl
+        state: mounted
+      loop:
+        - { dir: '/srv/app', device: '/dev/vg_data/lv_app' }
+        - { dir: '/var/lib/mysql', device: '/dev/vg_data/lv_db' }
+        - { dir: '/var/log/app_logs', device: '/dev/vg_data/lv_log' }

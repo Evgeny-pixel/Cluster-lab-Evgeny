@@ -1,0 +1,190 @@
+# Stage 4: Automatic deployment of an infrastructure cluster consisting of 3 servers (app, log, mon) using Docker Compose, including the preparation of the directory structure, recursive unpacking of source code/configs, and setting permissions.
+---
+- name: Configure app-server
+  hosts: app_servers
+  become: yes
+  tasks:
+    - name: Create logs and data directory for apps
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /var/log/app_logs/wordpress
+        - /var/log/app_logs/nginx
+        - /var/log/app_logs/mysql
+        - /etc/nginx/conf.d
+        - /etc/filebeat
+        - /etc/mysqld_exporter
+        - /srv/app/filebeat_data
+        - /opt/app/php
+
+    - name: Create debug.log for wordpress logs
+      ansible.builtin.file:
+        path: /var/log/app_logs/wordpress/debug.log
+        owner: '33'
+        group: '33'
+        mode: '0644'
+        state: touch
+
+    - name: Copy config file by working directories
+      ansible.builtin.copy:
+        src: "{{ item.source }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - { source: '../app/php/Dockerfile', dest: '/opt/app/php/' }
+        - { source: '../app/nginx/default.conf', dest: '/etc/nginx/conf.d/' }
+        - { source: '../app/filebeat.yml', dest: '/etc/filebeat/' }
+        - { source: '../app/Docker-compose-app.yml', dest: '/srv/app/' }
+        - { source: '../app/.my.cnf', dest: '/etc/mysqld_exporter/' }
+
+    - name: Copy wordpress by /srv/app
+      ansible.posix.synchronize:
+        src: ../app/wordpress
+        dest: /srv/app/
+        recursive: yes
+        delete: no
+
+    - name: Set access acl for www-data on wordpress and logs
+      ansible.posix.acl:
+        path: "{{ item }}"
+        entity: '33'
+        etype: user
+        permissions: rwx
+        recursive: yes
+        state: present
+      loop:
+        - /srv/app/wordpress
+        - /var/log/app_logs/wordpress
+        - /var/log/app_logs/nginx
+        - /var/log/app_logs/mysql
+
+    - name: Set default access acl for www-data on wordpress and logs
+      ansible.posix.acl:
+        path: "{{ item }}"
+        entity: '33'
+        etype: user
+        permissions: rwx
+        default: true
+        state: present
+      loop:
+        - /srv/app/wordpress
+        - /var/log/app_logs/wordpress
+        - /var/log/app_logs/nginx
+        - /var/log/app_logs/mysql
+
+
+- name: Configure mon-server
+  hosts: mon_servers
+  become: yes
+  tasks:
+    - name: Create working directory for mon apps
+      ansible.builtin.file:
+        path: "{{ item.dir }}"
+        state: directory
+        owner: "{{ item.user }}"
+        group: root
+        mode: '0755'
+      loop:
+        - { dir: '/etc/prometheus', user: 'root' }
+        - { dir: '/srv/mon/prometheus_data', user: '65534' }
+        - { dir: '/srv/mon/grafana_data', user: '472' }
+        - { dir: '/etc/grafana', user: 'root' }
+        - { dir: '/etc/alertmanager/templates', user: 'root' }
+        - { dir: '/srv/mon/alertmanager_data', user: 'root' }
+        - { dir: '/srv/mon/zabbix_db', user: 'root' }
+
+    - name: Copy config file by working directories
+      ansible.builtin.copy:
+        src: "{{ item.source }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - { source: '../mon/Docker-compose-mon.yml', dest: '/srv/mon/' }
+        - { source: '../mon/prometheus.yml', dest: '/etc/prometheus/' }
+        - { source: '../mon/alert.rules.yml', dest: '/etc/prometheus/' }
+        - { source: '../mon/telegram.tmpl', dest: '/etc/alertmanager/templates/' }
+
+    - name: Render Alertmanager configuration from Jinja2 template
+      ansible.builtin.template:
+        src: ../mon/alertmanager.yml.j2
+        dest: /etc/alertmanager/alertmanager.yml
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy provisioning by /etc/grafana
+      ansible.builtin.copy:
+        src: ../mon/grafana/provisioning
+        dest: /etc/grafana/
+        owner: root
+        group: root
+        mode: '0644'
+        directory_mode: '0755'
+
+
+- name: Configure log-server
+  hosts: log_servers
+  become: yes
+  tasks:
+    - name: Create working directory for log apps
+      ansible.builtin.file:
+        path: "{{ item.dir }}"
+        state: directory
+        owner: "{{ item.user }}"
+        group: root
+        mode: '0755'
+      loop:
+        - { dir: '/srv/log/elasticsearch_data', user: '1000' }
+        - { dir: '/etc/logstash', user: 'root' }
+
+    - name: Copy config file by working directories
+      ansible.builtin.copy:
+        src: "{{ item.source }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop:
+        - { source: '../log/Docker-compose-log.yml', dest: '/srv/log/' }
+        - { source: '../log/logstash.conf', dest: '/etc/logstash/' }
+
+
+- name: Docker compose on app-server
+  hosts: app_servers
+  become: yes
+  tasks:
+    - name: Create and start docker compose
+      community.docker.docker_compose_v2:
+        project_src: /srv/app/
+        files:
+          - Docker-compose-app.yml
+
+
+- name: Docker compose on mon-server
+  hosts: mon_servers
+  become: yes
+  tasks:
+    - name: Create and start docker compose
+      community.docker.docker_compose_v2:
+        project_src: /srv/mon/
+        files:
+          - Docker-compose-mon.yml
+
+
+- name: Docker compose on log-server
+  hosts: log_servers
+  become: yes
+  tasks:
+    - name: Create and start docker compose
+      community.docker.docker_compose_v2:
+        project_src: /srv/log/
+        files:
+          - Docker-compose-log.yml

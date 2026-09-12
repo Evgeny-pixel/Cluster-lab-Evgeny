@@ -1,0 +1,49 @@
+filebeat.inputs:
+  - type: filestream
+    id: nginx-access
+    enabled: true
+    paths:
+      - /var/log/app_logs/nginx/access.log
+    fields_under_root: true
+    fields:
+      stream: nginx_access
+
+  - type: filestream
+    id: nginx-error
+    enabled: true
+    paths:
+      - /var/log/app_logs/nginx/error.log
+    fields_under_root: true
+    fields:
+      stream: nginx_error
+
+  - type: filestream
+    id: wordpress-debug
+    enabled: true
+    paths:
+      - /var/log/app_logs/wordpress/debug.log
+    fields_under_root: true
+    fields:
+      stream: wordpress_debug
+
+  - type: filestream
+    id: mysql-logs
+    enabled: true
+    paths:
+      - /var/log/app_logs/mysql/*.log
+    fields_under_root: true
+    fields:
+      stream: mysql_logs
+
+  - type: filestream
+    id: system-logs
+    enabled: true
+    paths:
+      - /var/log/syslog
+    fields_under_root: true
+    fields:
+      stream: system_logs
+
+
+output.logstash:
+  hosts: ["172.16.0.4:5044"]

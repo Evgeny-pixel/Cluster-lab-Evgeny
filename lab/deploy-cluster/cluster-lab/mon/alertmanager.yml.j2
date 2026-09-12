@@ -1,0 +1,21 @@
+# Configure alertmanager to sending alert in telegram
+global:
+  resolve_timeout: 1m
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+route:
+  receiver: telegram
+  group_by: ['alertname', 'instance']
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 30s
+
+receivers:
+  - name: telegram
+    telegram_configs:
+    - api_url: 'https://api.telegram.org'
+      bot_token: "{{ telegram_token }}"
+      chat_id: {{ telegram_chat_id }}
+      message: '{% raw %}{{ template "telegram.message" . }}{% endraw %}'

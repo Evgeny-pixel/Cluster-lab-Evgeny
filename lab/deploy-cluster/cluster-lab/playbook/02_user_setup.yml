@@ -1,0 +1,127 @@
+# Stage 2: Create and configure enginier users, create groups
+---
+- name: Create user and group, configure ssh keys and sudoers
+  hosts: cluster
+  become: yes
+  vars:
+    password_salt: "fixedsaltvalue16"
+  tasks:
+    - name: Create group devops
+      ansible.builtin.group:
+        name: devops
+        state: present
+      
+    - name: Create user devops
+      ansible.builtin.user:
+        name: devops
+        shell: /bin/bash
+        group: devops
+        groups: sudo
+        append: yes
+        state: present
+
+    - name: Configure password for devops
+      ansible.builtin.user:
+        name: devops
+        password: "{{ 'devops' | password_hash('sha512',password_salt,rounds=5001) }}"
+        password_expire_max: 90
+        password_expire_min: 7
+        password_expire_warn: 7
+
+    - name: Add keys for devops
+      ansible.posix.authorized_key:
+        user: devops
+        state: present
+        key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/devops-key.pub') }}"
+
+    - name: Add devops in sudoers
+      ansible.builtin.copy:
+        content: "%devops ALL=(ALL) NOPASSWD: ALL"
+        dest: /etc/sudoers.d/devops
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+
+
+- name: Create user developer and configure posix alc
+  hosts: app_servers
+  become: yes
+  vars:
+    password_salt: "fixedsaltvalue16"
+  tasks:
+    - name: Create group developers
+      ansible.builtin.group:
+        name: developers
+        state: present
+
+    - name: Create user developer
+      ansible.builtin.user:
+        name: developer
+        shell: /bin/bash
+        group: developers
+        append: yes
+        state: present
+
+    - name: Configure password for developer
+      ansible.builtin.user:
+        name: developer
+        password: "{{ 'developer' | password_hash('sha512',password_salt,rounds=5001) }}"
+        password_expire_max: 90
+        password_expire_min: 7
+        password_expire_warn: 7
+
+    - name: Add keys for developer
+      ansible.posix.authorized_key:
+        user: developer
+        state: present
+        key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/developer-key.pub') }}"
+
+    - name: Set access acl for group devops on working directory
+      ansible.posix.acl:
+        path: "{{ item }}"
+        entity: devops
+        etype: group
+        permissions: rwx
+        state: present
+      loop:
+        - /srv/app
+        - /var/log/app_logs
+        - /var/lib/mysql
+
+    - name: Set default access acl for group devops on working directory
+      ansible.posix.acl:
+        path: "{{ item }}"
+        entity: devops
+        etype: group
+        permissions: rwx
+        default: true
+        state: present
+      loop:
+        - /srv/app
+        - /var/log/app_logs
+        - /var/lib/mysql
+
+    - name: Set access acl for group developers on working directory
+      ansible.posix.acl:
+        path: "{{ item.dir }}"
+        entity: developers
+        etype: group
+        permissions: "{{ item.perm }}"
+        state: present
+      loop:
+        - { dir: '/srv/app', perm: "---" }
+        - { dir: '/var/log/app_logs', perm: 'rx' }
+        - { dir: '/var/lib/mysql', perm: "---" }
+
+    - name: Set default access acl for group developers on working directory
+      ansible.posix.acl:
+        path: "{{ item.dir }}"
+        entity: developers
+        etype: group
+        permissions: "{{ item.perm }}"
+        default: true
+        state: present
+      loop:
+        - { dir: '/srv/app', perm: "---" }
+        - { dir: '/var/log/app_logs', perm: 'rx' }
+        - { dir: '/var/lib/mysql', perm: "---" }
+

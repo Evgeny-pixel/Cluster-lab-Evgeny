@@ -1,0 +1,47 @@
+---
+# STAGE 0: basic configure servers after setup
+- name: Create user, load public key and disable sudo password, disable ssh.socket and change ssh port
+  hosts: cluster
+  become: yes
+  tasks:
+    - name: Create user
+      ansible.builtin.user:
+        name: auto_user
+        groups: sudo
+        append: yes
+        shell: /bin/bash
+        state: present
+
+    - name: Load public key
+      ansible.posix.authorized_key:
+        user: auto_user
+        state: present
+        key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/ansible-key.pub') }}"
+
+    - name: Disable sudo password
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/auto_user
+        content: "auto_user ALL=(ALL) NOPASSWD:ALL\n"
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Disable ssh.socket
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        state: stopped
+        enabled: false
+
+    - name: Change ssh port to 3927
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(#\s*)?Port\s+\d+'
+        line: "Port 3927"
+      notify: Restart ssh
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
+        enabled: true
+

@@ -1,0 +1,13 @@
+{{ define "telegram.message" }}
+<b>{{ if eq .Status "firing" }}⚠️ There was a problem ⚠️{{ else }}✅ Problem fixed ✅{{ end }}</b>
+<b>Event:</b> {{ .CommonLabels.alertname }}
+<b>Status:</b> {{ .Status }}
+<b>Severity:</b> {{ .CommonLabels.severity }}
+<b>Hostname:</b> {{ .CommonLabels.instance }}
+
+{{ range .Alerts }}
+<b>Description:</b> {{ .Annotations.description }}
+<b>Time:</b> {{ .StartsAt.Format "02-01-2006 15:04:05" }}
+-----------------------------------
+{{ end }}
+{{ end }}

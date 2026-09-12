@@ -1,0 +1,134 @@
+# Create prometheus, node-exporter, grafana, alertmanager, zabbix-server, zabbix-db, zabbix-web and zabbix-agent container
+version: '3.8'
+
+networks:
+  mon_interval:
+    driver: bridge
+
+services:
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: mon_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /etc/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - /srv/mon/prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - mon_interval
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: mon_node_exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    networks:
+      - mon_interval
+
+  grafana:
+    image: grafana/grafana:10.0.0    
+    container_name: mon_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /srv/mon/grafana_data:/var/lib/grafana
+      - /etc/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - mon_interval
+
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: mon_alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - /srv/mon/alertmanager_data:/alertmanager
+      - /etc/alertmanager/templates:/etc/alertmanager/templates:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - mon_interval
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-6.4-latest
+    container_name: mon_zabbix_server
+    restart: unless-stopped
+    ports:
+      - "10051:10051"
+    environment:
+      DB_SERVER_HOST: "zabbix-db"
+      POSTGRES_DB: "zabbix"
+      POSTGRES_USER: "zabbix"
+      POSTGRES_PASSWORD: "zabbix"
+    depends_on:
+      - zabbix-db
+    networks:
+      - mon_interval
+
+  zabbix-db:
+    image: postgres:15-alpine
+    container_name: mon_zabbix_db
+    restart: unless-stopped
+    volumes:
+      - /srv/mon/zabbix_db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: "zabbix"
+      POSTGRES_USER: "zabbix"
+      POSTGRES_PASSWORD: "zabbix"
+    networks:
+      - mon_interval
+    
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-6.4-latest
+    container_name: mon_zabbix_web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_SERVER_HOST: "zabbix-db"
+      POSTGRES_DB: "zabbix"
+      POSTGRES_USER: "zabbix"
+      POSTGRES_PASSWORD: "zabbix"
+      ZBX_SERVER_HOST: "zabbix-server"
+    depends_on:
+      - zabbix-server
+    networks:
+      - mon_interval
+
+  zabbix-agent:
+    image: zabbix/zabbix-agent2:alpine-6.4-latest
+    container_name: app_zabbix_agent
+    restart: unless-stopped
+    ports:
+      - "10050:10050"
+    environment:
+      ZBX_SERVER_HOST: "zabbix-server"
+      ZBX_SERVER_ACTIVE: "zabbix-server"
+      ZBX_HOSTNAME: "Zabbix-server"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /dev:/host/dev:ro
+    depends_on:
+      - zabbix-server
+    networks:
+      - mon_interval
+

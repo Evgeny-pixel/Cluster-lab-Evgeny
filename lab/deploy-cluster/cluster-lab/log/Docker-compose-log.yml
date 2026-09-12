@@ -1,0 +1,86 @@
+# Configure elasticsearch, logstash, kibana, node exporter and zabbix-agent container
+version: '3.8'
+
+networks:
+  log_interval:
+    driver: bridge
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.18
+    container_name: log_elasticsearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+    environment:
+      ES_JAVA_OPTS: "-Xmx512m -Xms512m"
+      ELASTIC_USERNAME: "elastic"
+      ELASTIC_PASSWORD: "elastic"
+      discovery.type: "single-node"
+      xpack.security.enabled: "false"
+    volumes:
+      - /srv/log/elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - log_interval
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.18
+    container_name: log_logstash
+    restart: unless-stopped
+    ports:
+      - "5044:5044"
+    volumes:
+      - /etc/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    environment:
+      LS_JAVA_OPTS: "-Xmx512m -Xms512m"
+    depends_on:
+      - elasticsearch
+    networks:
+      - log_interval
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.18
+    container_name: log_kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+    depends_on:
+      - elasticsearch
+    networks:
+      - log_interval
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: log_node_exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    networks:
+      - log_interval
+
+  zabbix-agent:
+    image: zabbix/zabbix-agent2:alpine-6.4-latest
+    container_name: app_zabbix_agent
+    restart: unless-stopped
+    ports:
+      - "10050:10050"
+    environment:
+      ZBX_SERVER_HOST: "172.16.0.3"
+      ZBX_SERVER_ACTIVE: "172.16.0.3"
+      ZBX_HOSTNAME: "log-server"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /dev:/host/dev:ro
+    networks:
+      - log_interval
