@@ -7,6 +7,7 @@ RU
 
         Далее необходимо настроить сеть на всех серверах. Ip-адреса будут следующими: bastion-server - 172.16.0.1/24, app-server - 172.16.0.2/24, mon-server - 172.16.0.3/24, log-server - 172.16.0.4/24. Запускаем каждую виртуальную машинy. Так как по умолчанию на Ubuntu сеть управляется через Netplan, то мы будем использовать его, но можно и настроить через NetworkManager. Выполните на каждом сервере команду "ip a" и посмотрите на название третьего интерфейса, обычно это enp0s8, это наш активированный адаптер 2 с виртуальной сетью. Необходимо задать ему ip адрес и активировать интерфейс. Для этого выполните следующие команды на каждом сервере: "sudo nano /etc/netplan/99-lab-inet.yaml". 
     Затем пропишите в файлах на каждом сервере следующее:
+    
 network:
   version: 2
   ethernets:
@@ -35,6 +36,7 @@ EN
 
         Next, you need to configure the network on all servers. The IP addresses will be as follows: bastion-server - 172.16.0.1/24, app-server - 172.16.0.2/24, mon-server - 172.16.0.3/24, log-server - 172.16.0.4/24. Start each virtual machine. Since the network is managed by default on Ubuntu via Netplan, we will use it, but you can also configure it via NetworkManager. Run the "ip a" command on each server and look at the name of the third interface. It's usually enp0s8, which is our activated adapter 2 with the virtual network. You need to assign it an IP address and activate the interface. To do this, run the following commands on each server: "sudo nano /etc/netplan/99-lab-inet.yaml".
     Then, add the following to the files on each server:
+    
 network:
   version: 2
   ethernets:
